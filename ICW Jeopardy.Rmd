@@ -48,13 +48,20 @@ colnames(JeopardyData) <- str_remove_all(colnames(JeopardyData) ,pattern = NameP
 colnames(JeopardyData) <- str_replace_all(colnames(JeopardyData) ,pattern = NameChangePattern ,replacement = "RoBert")
 
 JeopardyData <- JeopardyData %>%
-  mutate(DayOfWeek = wday(Date ,labels = TRUE ,abbr = FALSE)) %>%
+  mutate(DayOfWeek = wday(Date ,label = TRUE ,abbr = FALSE)) %>%
   select(Week:Date ,DayOfWeek ,everything()) %>%
   arrange(Date)
 
 TidyJeopardyData <- JeopardyData %>%
   gather(key = "Player" ,value = "CorrectAnswer" ,-c(Week:Value)) %>%
   mutate(CorrectAnswerPoints = CorrectAnswer * Value)
+
+NotEnoughQuestionsAnsweredPlayers <- TidyJeopardyData %>%
+  group_by(Player) %>%
+  summarise(MissingDays = sum(is.na(CorrectAnswer))) %>%
+  filter(MissingDays >= 5) %>%
+  select(Player) %>%
+  pull()
 
 CompleteWeeksVector <- TidyJeopardyData %>%
   filter(Player == "RoBert") %>%
@@ -109,19 +116,110 @@ TotalCorrectChart <- TidyJeopardyData %>%
 
 TotalCorrectChart <- ChartLevelsFunction(TotalCorrectChart ,TotalCorrectChart$CorrectAnswer ,TotalCorrectChart$Player)
 
+ValuesVector <- TidyJeopardyData %>%
+  select(Value) %>%
+  unique() %>%
+  arrange(Value) %>%
+  pull()
+
+LongestWrongStreakChart <- TidyJeopardyData %>%
+  group_by(Player) %>%
+  summarise(LongestWrongStreak = max(rle(CorrectAnswer == 0)[[1]][rle(CorrectAnswer == 1)[[2]] == 0])) %>%
+  filter(!is.na(LongestWrongStreak)) %>%
+  arrange(desc(LongestWrongStreak) ,Player)
+
+LongestWrongStreakChart <- ChartLevelsFunction(LongestWrongStreakChart ,LongestWrongStreakChart$LongestWrongStreak ,LongestWrongStreakChart$Player)
+
 ```
 
 
 Player Comparison
 =======================================================================
 
-Column {data-width=500}
+Column {data-width=200 .sidebar}
 -----------------------------------------------------------------------
 
-### Total Weeks Won
+### Filters
 
 ```{r}
 
+selectInput("Value"
+            ,"Select a question value:"
+            ,choices = ValuesVector
+            ,multiple = TRUE
+            ,selected = ValuesVector)
+
+```
+
+
+Column {data-width=450}
+-----------------------------------------------------------------------
+
+
+### Total Points
+
+```{r}
+
+ReactiveTotalPointsData <- reactive({
+  TidyJeopardyData %>%
+    filter(Value %in% input$Value & !(Player %in% NotEnoughQuestionsAnsweredPlayers)) %>%
+    group_by(Player) %>%
+    summarise(CorrectAnswerPoints = sum(CorrectAnswerPoints ,na.rm = TRUE)) %>%
+    arrange(desc(CorrectAnswerPoints) ,Player)
+})
+
+
+renderPlot({
+  ggplot(ReactiveTotalPointsData() ,aes(x = reorder(Player ,CorrectAnswerPoints ,FUN = function(x) {x}) ,y = CorrectAnswerPoints)) +
+    geom_col() +
+    coord_flip() +
+    scale_y_continuous(labels = comma ,breaks = pretty_breaks()) +
+    # ggtitle("Points by Player") +
+    # theme(plot.title = element_text(hjust = 0.5)) +
+    labs(x = "Player") +
+    # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinTeammatePlusMinus ,MaxTeammatePlusMinus)) +    
+    # scale_fill_brewer(palette = "Set1") +
+    theme_fivethirtyeight()  
+})
+
+```
+
+### Correct Answers
+
+```{r}
+
+ReactiveTotalCorrectData <- reactive({
+  TidyJeopardyData %>%
+    filter(Value %in% input$Value & !(Player %in% NotEnoughQuestionsAnsweredPlayers)) %>%
+    group_by(Player) %>%
+    summarise(CorrectAnswer = sum(CorrectAnswer ,na.rm = TRUE)) %>%
+    arrange(desc(CorrectAnswer) ,Player)
+})
+
+renderPlot({
+  ggplot(ReactiveTotalCorrectData() ,aes(x = reorder(Player ,CorrectAnswer ,FUN = function(x) {x}) ,y = CorrectAnswer)) +
+    geom_col() +
+    coord_flip() +
+    scale_y_continuous(labels = comma ,breaks = pretty_breaks()) +
+    # ggtitle("Points by Player") +
+    # theme(plot.title = element_text(hjust = 0.5)) +
+    labs(x = "Player") +
+    # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinTeammatePlusMinus ,MaxTeammatePlusMinus)) +    
+    # scale_fill_brewer(palette = "Set1") +
+    theme_fivethirtyeight() 
+})
+
+```
+
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Weeks Won
+
+```{r}
+
+renderPlot({
 ggplot(WeeksWonChart ,aes(x = Player ,y = WeeksWon)) +
     geom_col() +
     coord_flip() +
@@ -132,36 +230,16 @@ ggplot(WeeksWonChart ,aes(x = Player ,y = WeeksWon)) +
     # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinTeammatePlusMinus ,MaxTeammatePlusMinus)) +    
     # scale_fill_brewer(palette = "Set1") +
     theme_fivethirtyeight()   
-
-
-
-```
-
-Column {data-width=500}
------------------------------------------------------------------------
-
-### Total Points
-
-```{r}
-
-ggplot(TotalPointsChart ,aes(x = Player ,y = CorrectAnswerPoints)) +
-    geom_col() +
-    coord_flip() +
-    scale_y_continuous(labels = comma ,breaks = pretty_breaks()) +
-    # ggtitle("Points by Player") +
-    # theme(plot.title = element_text(hjust = 0.5)) +
-    labs(x = "Player") +
-    # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinTeammatePlusMinus ,MaxTeammatePlusMinus)) +    
-    # scale_fill_brewer(palette = "Set1") +
-    theme_fivethirtyeight()   
+})
 
 ```
 
-### Total Correct Answers
+### Longest Incorrect Streak
 
 ```{r}
 
-ggplot(TotalCorrectChart ,aes(x = Player ,y = CorrectAnswer)) +
+renderPlot({
+ggplot(LongestWrongStreakChart ,aes(x = Player ,y = LongestWrongStreak)) +
     geom_col() +
     coord_flip() +
     scale_y_continuous(labels = comma ,breaks = pretty_breaks()) +
@@ -171,7 +249,7 @@ ggplot(TotalCorrectChart ,aes(x = Player ,y = CorrectAnswer)) +
     # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinTeammatePlusMinus ,MaxTeammatePlusMinus)) +    
     # scale_fill_brewer(palette = "Set1") +
     theme_fivethirtyeight() 
-
+})
 
 ```
 
