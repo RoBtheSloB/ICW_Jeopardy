@@ -279,6 +279,27 @@ PointsOverTimeData <- PointsOverTimeData %>%
   left_join(IdTable ,by = "Date") %>%
   select(Id ,everything())
 
+TotalQuestions <- max(PointsOverTimeData$Id)
+TotalCategories <- length(ThreeDayCategories)
+
+TopPointsOverTime <- PointsOverTimeData %>%
+  group_by(Id) %>%
+  summarise(Leader = max(CumulativePoints))
+
+LeaderPointsData <- PointsOverTimeData %>%
+  left_join(TopPointsOverTime ,by = "Id") %>%
+  mutate(InLead = as.numeric(CumulativePoints==Leader)) %>%
+  group_by(Player) %>%
+  summarise(QuestionsAsLeader = sum(InLead))
+  
+CategoryTable <- TidyJeopardyData %>%
+  group_by(Player ,Category) %>%
+  summarise(`Correct Answers`  = sum(CorrectAnswer ,na.rm = TRUE)
+            ,`Total Questions` = n()
+            ,`Points Earned`   = sum(CorrectAnswerPoints ,na.rm = TRUE)
+            ,`Points Possible` = sum(Value)
+            ) %>%
+  arrange(Player ,desc(`Correct Answers`) ,desc(`Points Earned`))
 
 ```
 
@@ -327,12 +348,11 @@ renderPlot({
     # ggtitle("Points by Player") +
     # theme(plot.title = element_text(hjust = 0.5)) +
     labs(x = "Player") +
-    # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinTeammatePlusMinus ,MaxTeammatePlusMinus)) +    
+    # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen")) +    
     # scale_fill_brewer(palette = "Set1") +
-    theme_fivethirtyeight()  
+    theme_fivethirtyeight() +
+    theme(legend.position = "none")
 })
-
-
 
 ```
 
@@ -361,10 +381,21 @@ renderPlot({
     theme_fivethirtyeight() 
 })
 
+
+
 ```
 
 Column {data-width=350}
 -----------------------------------------------------------------------
+
+### Total Questions Completed
+
+```{r}
+
+valueBox(TotalQuestions, icon = "far fa-calendar-alt")
+
+```
+
 
 ### Weeks Won
 
@@ -385,29 +416,41 @@ ggplot(WeeksWonChart ,aes(x = Player ,y = WeeksWon)) +
 
 ```
 
-### Unanswered Questions
+### Points over Time
 
 ```{r}
 
 renderPlot({
-ggplot(UnansweredQuestionsChart ,aes(x = Player ,y = UnansweredQuestions)) +
-    geom_col() +
-    coord_flip() +
-    scale_y_continuous(labels = comma ,breaks = pretty_breaks()) +
+  ggplot(PointsOverTimeData ,aes(x = Id ,y = CumulativePoints ,color = Player)) +
+    geom_line(alpha = .64 ,size = 1) +
+    # coord_flip() +
+    scale_y_continuous(labels = scales::comma ,breaks = pretty_breaks()) +
     # ggtitle("Points by Player") +
     # theme(plot.title = element_text(hjust = 0.5)) +
     labs(x = "Player") +
     # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinTeammatePlusMinus ,MaxTeammatePlusMinus)) +    
     # scale_fill_brewer(palette = "Set1") +
-    theme_fivethirtyeight()   
+    theme_fivethirtyeight() 
 })
+
+
 ```
+
 
 Other Statistics
 =======================================================================
 
 Column {data-width=500}
 -----------------------------------------------------------------------
+
+### Total Categories Completed 
+
+```{r}
+
+valueBox(TotalCategories ,icon = "fas fa-question-circle")
+
+```
+
 
 ### Correct Streak
 
@@ -476,9 +519,11 @@ ggplot(IncorrectStreakData ,aes(x = Player ,y = Streak)) +
 Column {data-width=500}
 -----------------------------------------------------------------------
 
+
 ### Best Categories as Group (3 day categories only)
 
 ```{r}
+
 
 renderPlot({
 ggplot(BestCategoriesChart ,aes(x = Category ,y = TotalCorrect)) +
@@ -488,10 +533,12 @@ ggplot(BestCategoriesChart ,aes(x = Category ,y = TotalCorrect)) +
     # ggtitle("Points by Player") +
     # theme(plot.title = element_text(hjust = 0.5)) +
     labs(x = "Player") +
-    # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinTeammatePlusMinus ,MaxTeammatePlusMinus)) +    
+    # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen")) +
     # scale_fill_brewer(palette = "Set1") +
     theme_fivethirtyeight()   
 })
+
+
 
 ```
 
@@ -538,14 +585,12 @@ ggplot(PercentCorrectChart ,aes(x = reorder(Player ,PercentCorrect ,FUN = functi
     labs(x = "Player") +
     # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinPercentCorrect ,MaxPercentCorrect)) +
     # scale_fill_brewer(palette = "Set1") +
-    theme_fivethirtyeight() 
-    # theme(legend.position = "none") 
+    theme_fivethirtyeight() +
+    theme(legend.position = "none") 
 })
 
 
 ```
-
-
 
 Player Page
 =======================================================================
@@ -567,6 +612,26 @@ selectInput("Player"
 
 Column {data-width=450}
 -----------------------------------------------------------------------
+
+### Unanswered Questions
+
+```{r}
+
+ReactiveUnanswered <- reactive({
+  UnansweredQuestionsChart %>%
+    filter(Player == input$Player) %>%
+    select(UnansweredQuestions) %>%
+    pull()
+})
+
+renderValueBox(
+  valueBox(ReactiveUnanswered()
+           ,icon = "fas fa-calendar-check"
+           ,color = ifelse(ReactiveUnanswered() == 0, "success", ifelse(ReactiveUnanswered() < 8 ,"warning" ,"danger")))
+)
+
+
+```
 
 ### Player Similarity
 
@@ -597,6 +662,54 @@ renderPlot({
 Column {data-width=350}
 -----------------------------------------------------------------------
 
+### Number of Questions while in the Lead
+
+```{r}
+
+ReactiveLeaderData <- reactive({
+  LeaderPointsData %>%
+    filter(Player == input$Player) %>%
+    select(QuestionsAsLeader) %>%
+    pull()
+})
+
+ExpectedDaysInLead <- TotalQuestions / length(PlayerListVector)
+
+renderValueBox(
+  valueBox(ReactiveLeaderData()
+           ,icon = "fas fa-trophy"
+           ,color = ifelse(ReactiveLeaderData() == 0, "danger", ifelse(ReactiveLeaderData() < ExpectedDaysInLead ,"warning" ,"success")))
+)
+
+
+```
+
+### Correct Percent
+
+```{r}
+
+ReactiveCorrectPercent <- reactive({
+  PercentCorrectChart %>%
+    filter(Player == input$Player) %>%
+    mutate(PercentCorrect = round(PercentCorrect * 100 ,1))%>%
+    select(PercentCorrect) %>%
+    pull()
+})
+
+
+LowerPercentile <- floor(quantile(PercentCorrectChart$PercentCorrect ,1/3) * 100)
+UpperPercentile <- floor(quantile(PercentCorrectChart$PercentCorrect ,2/3) * 100)
+
+renderGauge({
+  gauge(ReactiveCorrectPercent() 
+        ,min = 0 
+        ,max = 100 
+        ,symbol = '%'
+        ,sectors = gaugeSectors(success = c(UpperPercentile ,100) ,warning = c(LowerPercentile ,UpperPercentile) ,danger = c(0 ,LowerPercentile)))
+})
+
+```
+
 ### Correct Answers by Value
 
 ```{r}
@@ -621,23 +734,19 @@ renderPlot({
 
 ```
 
-
-### Points over Time
+### Performance by Category 
 
 ```{r}
 
-renderPlot({
-  ggplot(PointsOverTimeData ,aes(x = Id ,y = CumulativePoints ,color = Player)) +
-    geom_line(alpha = .64) +
-    # coord_flip() +
-    scale_y_continuous(labels = scales::comma ,breaks = pretty_breaks()) +
-    # ggtitle("Points by Player") +
-    # theme(plot.title = element_text(hjust = 0.5)) +
-    labs(x = "Player") +
-    # scale_fill_gradientn(colors = c("darkred", "tomato1","palegreen", "darkgreen") ,limit = c(MinTeammatePlusMinus ,MaxTeammatePlusMinus)) +    
-    # scale_fill_brewer(palette = "Set1") +
-    theme_fivethirtyeight() 
+
+DT::renderDataTable({
+  CategoryTable2 <- CategoryTable %>%
+    filter(Player %in% input$Player) %>%
+    ungroup() %>%
+    select(-Player)
+  DT::datatable(CategoryTable2 ,options = list(scrollY = '300px', paging = FALSE, scrollX = TRUE))
 })
+
 
 
 ```
