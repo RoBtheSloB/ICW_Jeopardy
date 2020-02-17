@@ -1,7 +1,9 @@
 ---
 title: "ICW Jeopardy"
+resource_files:
+- Import Current Jeopardy Workbook.R
 runtime: shiny
-output: 
+output:
   flexdashboard::flex_dashboard:
     orientation: columns
     vertical_layout: fill
@@ -28,7 +30,7 @@ library(lubridate)
 
 
 ```{r include=FALSE}
-source("C:/Users/rriesenb/Personal/Jeopardy/Import Current Jeopardy Workbook.R")
+source("Import Current Jeopardy Workbook.R")
 
 RawJeopardyData <- read_excel("Jeopardy Data.xlsx" ,skip = 3)
 
@@ -181,7 +183,7 @@ BestCategoriesChart <- TidyJeopardyData %>%
   group_by(Category) %>%
   summarise(TotalCorrect = sum(CorrectAnswer ,na.rm = T)
             ,TotalPoints = sum(CorrectAnswerPoints ,na.rm = T)) %>%
-  arrange(desc(TotalCorrect) ,desc(TotalPoints)) %>%
+  arrange(desc(TotalCorrect) ,Category) %>%
   slice(1:5)
 
 WorstCategoriesChart <- TidyJeopardyData %>%
@@ -189,7 +191,7 @@ WorstCategoriesChart <- TidyJeopardyData %>%
   group_by(Category) %>%
   summarise(TotalCorrect = sum(CorrectAnswer ,na.rm = T)
             ,TotalPoints = sum(CorrectAnswerPoints ,na.rm = T)) %>%
-  arrange(TotalCorrect ,TotalPoints) %>%
+  arrange(TotalCorrect ,Category) %>%
   slice(1:5)
 
 BestCategoriesLevels <- BestCategoriesChart %>%
@@ -256,6 +258,13 @@ PercentCorrectChart <- TidyJeopardyData %>%
   group_by(Player) %>%
   summarise(PercentCorrect = sum(CorrectAnswer ,na.rm = TRUE)/sum(!is.na(CorrectAnswer)))
 
+PercentCorrectLevels <- PercentCorrectChart %>%
+  arrange(PercentCorrect ,desc(Player)) %>%
+  select(Player) %>%
+  pull()
+
+PercentCorrectChart$Player <- factor(PercentCorrectChart$Player ,levels = PercentCorrectLevels)
+
 PointsOverTimeData <- TidyJeopardyData %>%
   group_by(Player) %>%
   mutate(CumulativePoints = cumsum(coalesce(CorrectAnswerPoints ,0))) %>%
@@ -280,7 +289,11 @@ PointsOverTimeData <- PointsOverTimeData %>%
   select(Id ,everything())
 
 TotalQuestions <- max(PointsOverTimeData$Id)
-TotalCategories <- length(ThreeDayCategories)
+TotalCategories <- TidyJeopardyData %>%
+  select(Category) %>%
+  unique() %>%
+  summarise(CategoryCount = n()) %>%
+  pull()
 
 TopPointsOverTime <- PointsOverTimeData %>%
   group_by(Id) %>%
@@ -331,8 +344,18 @@ Column {data-width=450}
 
 ```{r}
 
+TidyJeopardyData2 <- TidyJeopardyData
+
+ReverseAlphabeticalLevels <- TidyJeopardyData2 %>%
+  select(Player) %>%
+  unique() %>%
+  arrange(desc(Player)) %>%
+  pull()
+
+TidyJeopardyData2$Player <- factor(TidyJeopardyData2$Player ,levels = ReverseAlphabeticalLevels)
+
 ReactiveTotalPointsData <- reactive({
-  TidyJeopardyData %>%
+  TidyJeopardyData2 %>%
     filter(Value %in% input$Value) %>%
     group_by(Player) %>%
     summarise(CorrectAnswerPoints = sum(CorrectAnswerPoints ,na.rm = TRUE)) %>%
@@ -361,7 +384,7 @@ renderPlot({
 ```{r}
 
 ReactiveTotalCorrectData <- reactive({
-  TidyJeopardyData %>%
+  TidyJeopardyData2 %>%
     filter(Value %in% input$Value) %>%
     group_by(Player) %>%
     summarise(CorrectAnswer = sum(CorrectAnswer ,na.rm = TRUE)) %>%
@@ -388,7 +411,7 @@ renderPlot({
 Column {data-width=350}
 -----------------------------------------------------------------------
 
-### Total Questions Completed
+### Total Questions
 
 ```{r}
 
@@ -443,7 +466,7 @@ Other Statistics
 Column {data-width=500}
 -----------------------------------------------------------------------
 
-### Total Categories Completed 
+### Total Categories
 
 ```{r}
 
@@ -462,7 +485,7 @@ CorrectPlayerLevels <- CorrectStreakData %>%
   filter(LengthType == "Longest") %>%
   group_by(Player) %>%
   summarise(MaxStreak = max(Streak)) %>%
-  arrange(MaxStreak) %>%
+  arrange(MaxStreak ,desc(Player)) %>%
   select(Player) %>%
   pull()
 
@@ -494,7 +517,7 @@ IncorrectPlayerLevels <- IncorrectStreakData %>%
   filter(LengthType == "Longest") %>%
   group_by(Player) %>%
   summarise(MaxStreak = max(Streak)) %>%
-  arrange(MaxStreak) %>%
+  arrange(MaxStreak ,desc(Player)) %>%
   select(Player) %>%
   pull()
 
@@ -576,7 +599,7 @@ MaxPercentCorrect <- PercentCorrectChart %>%
   pull()
 
 renderPlot({
-ggplot(PercentCorrectChart ,aes(x = reorder(Player ,PercentCorrect ,FUN = function(x) {x}) ,y = PercentCorrect)) +
+ggplot(PercentCorrectChart ,aes(x = Player ,y = PercentCorrect)) +
     geom_col() +
     coord_flip() +
     scale_y_continuous(labels = scales::percent ,breaks = c(0 ,.25 ,.5 ,.75 ,1) ,limit = c(0 ,1)) +
@@ -636,6 +659,8 @@ renderValueBox(
 ### Player Similarity
 
 ```{r}
+
+PlayerSimilarityChart$Competitor <- factor(PlayerSimilarityChart$Competitor ,levels = ReverseAlphabeticalLevels)
 
 ReactiveSimilarityData <- reactive({
   PlayerSimilarityChart %>%
